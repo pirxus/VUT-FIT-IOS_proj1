@@ -1,0 +1,405 @@
+#!/bin/sh
+#TODO
+# -log name checking
+
+export POSIXLY_CORRECT=yes
+
+# variable for storing newline character
+nl='
+'
+
+# filter parameter variables 
+after=""
+before=""
+ipaddr=""
+uri=""
+
+# variable indicating which command is to be executed
+com=""
+
+while [ $# != 0 ]
+do
+  if [ -z "$lastArgument" ];
+  then
+    case $1 in
+      "list-ip")
+         com="$1"
+         shift
+         break
+         ;;
+      "list-hosts")
+         com="$1"
+         shift
+         break
+         ;;
+      "list-uri")
+        com="$1"
+        shift
+        break
+        ;;
+      "hist-ip")
+        com="$1"
+        shift
+        break
+        ;;
+      "hist-load")
+        com="$1"
+        shift
+        break
+        ;;
+      *)
+        lastArgument="$1"
+        ;;
+    esac
+
+  else
+    case $lastArgument in
+
+      "-a")
+
+        if [ -z "$after" ];
+        then
+          if echo "$2" | grep -q -E "^[1-2][0-9]{3}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1]) ([0-1][0-9]|2[0-4]):[0-5][0-9]:[0-5][0-9]$"
+          then
+            after="$2"
+          else
+            echo "Error: Invalid '-a' filter parameter format: '$2'"
+            exit 1
+          fi
+        else
+          echo "Error: Got two instances of filter '-a'"
+          exit 1
+        fi
+        ;;
+        
+      "-b")
+
+        if [ -z "$before" ];
+        then
+          if echo "$2" | grep -q -E "^[1-2][0-9]{3}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1]) ([0-1][0-9]|2[0-4]):[0-5][0-9]:[0-5][0-9]$"
+          then
+            before="$2"
+          else
+            echo "Error: Invalid '-b' filter parameter format: '$2'"
+            exit 1
+          fi
+        else
+          echo "Error: Got two instances of filter '-b'"
+          exit 1
+        fi
+        ;;
+
+      "-ip")
+
+        if [ -z "$ipaddr" ];
+        then
+          if echo "$2" | grep -q -E "^((([0-9]{1,3}\.){3}[0-9]{1,3})|(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])))$"
+          then
+            ipaddr="$2"
+          else
+            echo "Error: Invalid '-ip' filter parameter format: '$2'"
+            exit 1
+          fi
+        else
+          echo "Error: Got two instances of filter '-ip'"
+          exit 1
+        fi
+        ;;
+
+      "-uri")
+
+        if [ -z "$uri" ];
+        then
+          if echo "$2" | grep -q -E "^\S+$"
+          then
+            uri="$2"
+          else
+            echo "Error: Invalid '-uri' filter parameter format: '$2'"
+            exit 1
+          fi
+        else
+          echo "Error: Got two instances of filter '-uri'"
+          exit 1
+        fi
+        ;;
+
+      *)
+        if [ -f "$lastArgument" ]; then
+          break
+        else
+          echo "Error: '$lastArgument' is not a valid program argument"
+          exit 1
+        fi
+        ;;
+    esac
+
+      lastArgument=""
+      shift 2
+  fi
+done
+
+# loading all the file data
+if [ $# = 0 ];
+then
+  # getting data from stdin
+  filetext=$(cat)
+else
+
+  # getting data from files given as arguments
+  for file in "$@"
+  do
+    if [ -f "$file" ];
+    then
+      if [ -r "$file" ];
+      then
+        if [ "${file##*.}" = gz ]; then
+          filetext="${filetext}${nl}$(gunzip -c "$file")"
+        else
+          filetext="${filetext}${nl}$(cat "$file")"
+        fi
+      else
+        echo "Error: '$file' is not a readable file"
+        exit 1
+      fi
+
+    else
+      echo "Error: '$file' is not an existing file"
+      exit 1
+    fi
+  done
+
+  # delete the redundant empty first line
+  filetext=$(echo "$filetext" | sed '1d')
+fi
+
+
+
+# filter the data
+
+if [ -n "$after" ];
+then
+  # converting the given date to a number
+  after=$(echo "$after" | sed 's/[- :]//g')
+  IFS=${nl}
+
+  for line in $filetext
+  do
+
+    # extracting the date from the log line and reformatting it, separating the
+    # values with spaces  
+    date=$(echo "$line" | awk '{ print $4 }' | tail -c +2 | sed 's/[/:]/ /g')
+
+    # rearranging the date into one big number
+    dateValue=$(echo "$date" | awk '{ print $3 }')
+    month=$(echo "$date" | awk '{ print $2}') 
+
+    case "$month" in
+      "Jan") month="01";; "Feb") month="02";; "Mar") month="03";; "Apr") month="04";; "May") month="05";; "Jun") month="06";;
+      "Jul") month="07";; "Aug") month="09";; "Sep") month="09";; "Oct") month="10";; "Nov") month="11";; "Dec") month="12";; *);;
+    esac
+
+    dateValue="${dateValue}${month}$(echo "$date" | awk '{ print $1$4$5$6 }')"
+
+    # now compare the two values
+    if [ "$dateValue" -gt "$after" ];
+    then
+      output="${output}${nl}${line}"
+    fi
+  done
+  
+  # remove the redundant and empty first line
+  filetext=$(echo "$output" | sed '1d')
+  output=""
+fi
+
+
+if [ -n "$before" ];
+then
+  # converting the given date to a number
+  before=$(echo "$before" | sed 's/[- :]//g')
+  IFS=${nl}
+
+  for line in $filetext
+  do
+
+    # extracting the date from the log line and reformatting it, separating the
+    # values with spaces  
+    date=$(echo "$line" | awk '{ print $4 }' | tail -c +2 | sed 's/[/:]/ /g')
+
+    # rearranging the date into one big number
+    dateValue=$(echo "$date" | awk '{ print $3 }')
+    month=$(echo "$date" | awk '{ print $2}')
+
+    case "$month" in
+      "Jan") month="01";; "Feb") month="02";; "Mar") month="03";; "Apr") month="04";; "May") month="05";; "Jun") month="06";;
+      "Jul") month="07";; "Aug") month="09";; "Sep") month="09";; "Oct") month="10";; "Nov") month="11";; "Dec") month="12";; *);;
+    esac
+
+    dateValue="${dateValue}${month}$(echo "$date" | awk '{ print $1$4$5$6 }')"
+
+    # now compare the two values
+    if [ "$dateValue" -lt "$before" ];
+    then
+      output="${output}${nl}${line}"
+    fi
+  done
+
+  # remove the redundant and empty first line
+  filetext=$(echo "$output" | sed '1d')
+  output=""
+fi
+
+
+if [ -n "$ipaddr" ];
+then
+  # discard all the lines that do not begin with the given ip
+  filetext=$(echo "$filetext" | grep "^$ipaddr")
+fi
+
+
+if [ -n "$uri" ];
+then
+  # discard all the lines that do not correspond with the given uri
+  filetext=$(echo "$filetext" | grep -E "^.*\"(GET|POST|HEAD) $uri HTTP/1")
+fi
+
+
+# execute loaded commands
+
+case $com in
+  "list-ip")
+    # printing the ip addresses
+    if [ -n "$filetext" ];
+    then
+      echo "$filetext" | awk '{ print $1 }' | sort -u
+    fi
+    ;;
+
+  "list-hosts")
+    # extract the ip addresses
+    filetext=$(echo "$filetext" | awk '{ print $1 }')
+
+    for line in $filetext
+    do
+      if temp=$(host "$line");
+      then
+        output="${output}${nl}$(echo "$temp" | awk '{ print $5 }')"
+      else
+        output="${output}${nl}${line}"
+      fi
+    done
+
+    # remove empty first line and sort the output
+    echo "$output" | sed '1d' | sort -u
+    ;;
+
+  "list-uri")
+    # if the line contains a uri, extract the uri
+    filetext=$(echo "$filetext" | grep -E "^.*\"(GET|POST|HEAD) \S+ HTTP/1" | awk '{ print $7 }')
+
+    # remove duplicit uris
+    if [ -n "$filetext" ];
+    then
+      echo "$filetext" | sort -u
+    fi
+    ;;
+
+  "hist-ip")
+    # extract the ip addresses and remove duplicates
+    # so that we can iterate through a list of ips
+    filetext=$(echo "$filetext" | awk '{ print $1 }')
+    nonDuplicit=$(echo "$filetext" | sort -u)
+
+    for ip in $nonDuplicit
+    do
+      # for every ip, count how many times it occurs in the original log 
+      count=$(echo "$filetext" | grep -cow "$ip")
+      hashtags=$(printf "%*s" "$count" "")
+      output="${output}${nl}$(printf "%s (%d): %s" "$ip" "$count" "$(echo "$hashtags" | sed 's/ /#/g')")"
+    done
+      # remove the empty first line and sort the output according to the number of occurences
+      echo "$output" | sed '1d' | sort -n --field-separator='(' -k 2 -r
+    ;;
+    
+  "hist-load")
+    date="00000000000000"
+    count="0"
+    IFS=${nl}
+
+    # first, we need to sort the logs by date
+    for line in $filetext
+    do
+      currentDate=$(echo "$line" | awk '{ print $4 }' | tail -c +2 | sed 's/[/:]/ /g')
+
+      # rearranging the date into one big number
+      currentDateValue=$(echo "$currentDate" | awk '{ print $3 }')
+      month=$(echo "$currentDate" | awk '{ print $2 }')
+
+      case "$month" in
+        "Jan") month="01";; "Feb") month="02";; "Mar") month="03";; "Apr") month="04";; "May") month="05";; "Jun") month="06";;
+        "Jul") month="07";; "Aug") month="09";; "Sep") month="09";; "Oct") month="10";; "Nov") month="11";; "Dec") month="12";; *);;
+      esac
+
+      currentDateValue="${currentDateValue}${month}$(echo "$currentDate" | awk '{ print $1$4$5$6 }')"
+      text="${text}${nl}$(echo "$line" | sed "s/\[.*\]/$currentDateValue/")"
+    done
+
+    # sorting the logs based on the value of the converted date
+    filetext=$(echo "$text" | sed '1d' | sort -k 4)
+
+    for line in $filetext
+    do
+
+      # extracting the date from the current line
+      currentDate=$(echo "$line" | awk '{ print $4 }')
+
+      # create a temporary date value raised by one hour
+      if [ "$(echo "$date" | head -c -5 | tail -c -2)" -eq "23" ];
+      then
+        oneHourFromNow="$((date + 77000))"
+      else
+        oneHourFromNow="$((date + 10000))"
+      fi
+      
+      # now check if the current line fits within the given timespan
+      if [ "$currentDate" -lt "$oneHourFromNow" ];
+      then
+        count="$((count + 1))"
+      else
+        if [ $count -gt "0" ];
+        then
+          hashtags=$(printf "%*s" "$count" "")
+
+          output="${output}${nl}$(printf "%s-%s-%s %s:00 (%d): %s" "$(echo "$date" | head -c +4)"\
+          "$(echo "$date" | head -c -9 | tail -c -2)" "$(echo "$date" | head -c -7 | tail -c -2)"\
+          "$(echo "$date" | head -c -5 | tail -c -2)" "$count" "$(echo "$hashtags" | sed 's/ /#/g')")"
+
+        fi
+        count="1"
+        date="$(echo "$currentDate" | head -c -5)0000"
+      fi
+    done
+
+    # print out the remaining line of the histogram
+    if [ "$date" -ne 0 ];
+    then
+      hashtags=$(printf "%*s" "$count" "")
+      output="${output}${nl}$(printf "%s-%s-%s %s:00 (%d): %s" "$(echo "$date" | head -c +4)"\
+      "$(echo "$date" | head -c -9 | tail -c -2)" "$(echo "$date" | head -c -7 | tail -c -2)"\
+      "$(echo "$date" | head -c -5 | tail -c -2)" "$count" "$(echo "$hashtags" | sed 's/ /#/g')")"
+    fi
+
+    # remove the redundant and empty first line, print the output
+    echo "$output" | sed '1d'
+    ;;
+
+  *)
+    if [ -n "$filetext" ];
+    then
+      echo "$filetext"
+    fi
+    ;;
+
+esac
+
+exit 0
