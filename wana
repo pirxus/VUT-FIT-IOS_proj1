@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# AUTHOR: xsedla1h, Simon Sedlacek
+# EMAIL: xsedla1h@stud.fit.vutbr.cz
+
 export POSIXLY_CORRECT=yes
 
 # variable for storing newline character
@@ -107,7 +111,7 @@ do
 
         if [ -z "$uri" ];
         then
-          if echo "$2" | grep -q -E "^[^\s]+"
+          if echo "$2" | grep -q -E "^[^[:space:]]+$"
           then
             uri="$2"
           else
@@ -273,7 +277,7 @@ case $com in
   "list-uri")
     if [ -n "$filetext" ];
     then
-      echo "$filetext" | grep -E "^.*\"(GET|POST|HEAD) [^\s]+ HTTP/1" | awk '{ print $7 }' | sort -u
+      echo "$filetext" | grep -E "^.*\"(GET|POST|HEAD) [^[:space:]]+ HTTP/1" | awk '{ print $7 }' | sort -u
     fi
     ;;
 
