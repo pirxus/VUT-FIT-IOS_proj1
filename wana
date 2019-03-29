@@ -237,7 +237,7 @@ fi
 
 if [ -n "$uri" ];
 then
-  # discard all the lines that do not correspond with the given uri
+  # discard all the lines that do not correspond to the given uri
   filetext=$(echo "$filetext" | grep -E "^.*\"(GET|POST|HEAD) $uri HTTP/1")
 fi
 
@@ -263,7 +263,7 @@ case $com in
       do
         if temp=$(host "$line");
         then
-          output="${output}${nl}$(echo "$temp" | awk '{ print $5 }')"
+          output="${output}${nl}$(echo "$temp" | grep -v "is an alias for" | awk '{ print $NF }')"
         else
           output="${output}${nl}${line}"
         fi
